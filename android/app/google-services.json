@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "315166682344",
+    "project_id": "preflight-crew-auth-stan",
+    "storage_bucket": "preflight-crew-auth-stan.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:315166682344:android:7375a11df1d185274ead5d",
+        "android_client_info": {
+          "package_name": "co.za.wethinkcode.preflight_crew_auth"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdEYOzHEXe0F45TyxPb4WdCgUTJEUNCa8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
