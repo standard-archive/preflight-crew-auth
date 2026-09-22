@@ -2,6 +2,7 @@ import "package:cloud_firestore/cloud_firestore.dart";
 import "package:firebase_auth/firebase_auth.dart";
 import "package:flutter/material.dart";
 import "package:flutter_animate/flutter_animate.dart";
+import "crew_directory_screen.dart";
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,8 +29,8 @@ class _HomeScreenState extends State<HomeScreen> {
         .replaceAll(RegExp(r'\s+'), '-');
   }
 
-  Future<void> _joinCrew() async {
-    final name = _crewController.text.trim();
+  Future<void> _joinCrew(String rawName) async {
+    final name = rawName.trim();
     if (name.isEmpty) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -40,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isJoining = true);
 
     final crewRef = FirebaseFirestore.instance.collection('crews').doc(slug);
+    final memberRef = crewRef.collection('members').doc(user.uid);
     final userRef =
         FirebaseFirestore.instance.collection('users').doc(user.uid);
 
@@ -57,15 +59,15 @@ class _HomeScreenState extends State<HomeScreen> {
           transaction.set(crewRef, {
             'name': name,
             'createdAt': now,
-            'members': {
-              user.uid: {'email': user.email, 'joinedAt': now},
-            },
+            'memberCount': 1,
           });
         } else {
           transaction.update(crewRef, {
-            'members.${user.uid}': {'email': user.email, 'joinedAt': now},
+            'memberCount': FieldValue.increment(1),
           });
         }
+
+        transaction.set(memberRef, {'email': user.email, 'joinedAt': now});
 
         transaction.set(
           userRef,
@@ -89,6 +91,17 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } finally {
       if (mounted) setState(() => _isJoining = false);
+    }
+  }
+
+  Future<void> _openDirectory() async {
+    final selectedName = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const CrewDirectoryScreen()),
+    );
+    if (selectedName != null) {
+      _crewController.text = selectedName;
+      _joinCrew(selectedName);
     }
   }
 
@@ -161,7 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         return _JoinCrewForm(
                           controller: _crewController,
                           isJoining: _isJoining,
-                          onJoin: _joinCrew,
+                          onJoin: () => _joinCrew(_crewController.text),
+                          onBrowse: _openDirectory,
                         );
                       }
 
@@ -172,36 +186,52 @@ class _HomeScreenState extends State<HomeScreen> {
                             .doc(crewId)
                             .snapshots(),
                         builder: (context, crewSnap) {
-                          if (!crewSnap.hasData || !crewSnap.data!.exists) {
+                          if (crewSnap.connectionState ==
+                                  ConnectionState.waiting &&
+                              !crewSnap.hasData) {
                             return const Padding(
                               padding: EdgeInsets.symmetric(vertical: 24),
                               child: CircularProgressIndicator(),
                             );
                           }
 
-                          final crewData = crewSnap.data!.data()!;
-                          final crewName = crewData['name'] as String? ?? crewId;
-                          final membersMap = Map<String, dynamic>.from(
-                              crewData['members'] as Map? ?? {});
-
-                          final members = membersMap.entries.map((entry) {
-                            final data =
-                                Map<String, dynamic>.from(entry.value as Map);
-                            final joinedAt = data['joinedAt'] as Timestamp?;
-                            return (
-                              email: data['email'] as String? ?? 'Unknown',
-                              joinedAt: joinedAt?.toDate(),
+                          if (!crewSnap.hasData || !crewSnap.data!.exists) {
+                            return _JoinCrewForm(
+                              controller: _crewController,
+                              isJoining: _isJoining,
+                              onJoin: () => _joinCrew(_crewController.text),
+                              onBrowse: _openDirectory,
                             );
-                          }).toList()
-                            ..sort((a, b) {
-                              if (a.joinedAt == null || b.joinedAt == null) {
-                                return 0;
-                              }
-                              return a.joinedAt!.compareTo(b.joinedAt!);
-                            });
+                          }
 
-                          return _CrewDetails(
-                              crewName: crewName, members: members);
+                          final crewData = crewSnap.data!.data()!;
+                          final crewName =
+                              crewData['name'] as String? ?? crewId;
+
+                          return StreamBuilder<
+                              QuerySnapshot<Map<String, dynamic>>>(
+                            stream: FirebaseFirestore.instance
+                                .collection('crews')
+                                .doc(crewId)
+                                .collection('members')
+                                .orderBy('joinedAt')
+                                .snapshots(),
+                            builder: (context, membersSnap) {
+                              final members = (membersSnap.data?.docs ?? [])
+                                  .map((d) => (
+                                        email: d.data()['email'] as String? ??
+                                            'Unknown',
+                                        joinedAt:
+                                            (d.data()['joinedAt']
+                                                    as Timestamp?)
+                                                ?.toDate(),
+                                      ))
+                                  .toList();
+
+                              return _CrewDetails(
+                                  crewName: crewName, members: members);
+                            },
+                          );
                         },
                       );
                     },
@@ -226,11 +256,13 @@ class _JoinCrewForm extends StatelessWidget {
     required this.controller,
     required this.isJoining,
     required this.onJoin,
+    required this.onBrowse,
   });
 
   final TextEditingController controller;
   final bool isJoining;
   final VoidCallback onJoin;
+  final VoidCallback onBrowse;
 
   @override
   Widget build(BuildContext context) {
@@ -246,10 +278,18 @@ class _JoinCrewForm extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: onBrowse,
+          icon: const Icon(Icons.groups_outlined),
+          label: const Text("Browse existing crews"),
+        ),
+        const SizedBox(height: 16),
+        const Text("or"),
+        const SizedBox(height: 16),
         TextField(
           controller: controller,
           decoration: const InputDecoration(
-            labelText: "Crew name",
+            labelText: "New crew name",
             border: OutlineInputBorder(),
           ),
         ),
@@ -262,7 +302,7 @@ class _JoinCrewForm extends StatelessWidget {
                   width: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text("Join Crew"),
+              : const Text("Create / Join Crew"),
         ),
       ],
     );

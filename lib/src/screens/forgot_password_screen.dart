@@ -70,7 +70,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         "Check your inbox",
                         style: Theme.of(context).textTheme.headlineMedium,
                         textAlign: TextAlign.center,
-                      ),
+                      ).animate().fadeIn(duration: 600.ms).slideY(begin: -0.2),
                       const SizedBox(height: 8),
                       Text(
                         "We sent a password reset link to ${_emailController.text.trim()}.",
@@ -93,7 +93,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           "Forgot your password?",
                           style: Theme.of(context).textTheme.headlineMedium,
                           textAlign: TextAlign.center,
-                        ),
+                        ).animate().fadeIn(duration: 600.ms).slideY(begin: -0.2),
                         const SizedBox(height: 8),
                         const Text(
                           "Enter your email and we'll send you a reset link.",

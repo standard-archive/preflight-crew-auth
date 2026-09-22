@@ -87,7 +87,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                   "Verify your email",
                   style: Theme.of(context).textTheme.headlineMedium,
                   textAlign: TextAlign.center,
-                ),
+                ).animate().fadeIn(duration: 600.ms).slideY(begin: -0.2),
                 const SizedBox(height: 8),
                 Text(
                   "We sent a verification link to $email. Click it, then come back here.",
