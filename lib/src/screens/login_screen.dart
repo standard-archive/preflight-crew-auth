@@ -1,6 +1,7 @@
 ﻿import "package:flutter/material.dart";
 import "package:firebase_auth/firebase_auth.dart";
 import "signup_screen.dart";
+import "package:flutter_animate/flutter_animate.dart";
 import "forgot_password_screen.dart";
 
 class LoginScreen extends StatefulWidget {
@@ -67,7 +68,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Icon(Icons.groups,
-                      size: 64, color: Theme.of(context).colorScheme.primary),
+                      size: 64, color: Theme.of(context).colorScheme.primary)
+                      .animate()
+                      .fadeIn(duration: 600.ms)
+                      .scale(begin: const Offset(0.8, 0.8)),
                   const SizedBox(height: 16),
                   Text(
                     "PreFlight Crew",
@@ -171,3 +175,5 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
+

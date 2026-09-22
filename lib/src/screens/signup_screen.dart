@@ -1,5 +1,6 @@
 ﻿import "package:flutter/material.dart";
 import "package:firebase_auth/firebase_auth.dart";
+import "package:flutter_animate/flutter_animate.dart";
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -83,7 +84,11 @@ class _SignupScreenState extends State<SignupScreen> {
                     "Join PreFlight Crew",
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium,
-                  ),
+                  )
+                      .animate()
+                      .fadeIn(duration: 600.ms)
+                      .slideY(begin: -0.2),
+
                   const SizedBox(height: 8),
                   Text(
                     "Signup is restricted to $_allowedDomain emails",
