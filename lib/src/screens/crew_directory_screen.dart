@@ -4,6 +4,39 @@ import "package:flutter/material.dart";
 class CrewDirectoryScreen extends StatelessWidget {
   const CrewDirectoryScreen({super.key});
 
+  Future<void> _promptPassword(BuildContext context, String crewName) async {
+    final controller = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("Join $crewName"),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: "Crew password",
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text("Join"),
+          ),
+        ],
+      ),
+    );
+
+    if (password != null && password.isNotEmpty && context.mounted) {
+      Navigator.pop(context, (name: crewName, password: password));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -36,7 +69,7 @@ class CrewDirectoryScreen extends StatelessWidget {
           return ListView.separated(
             padding: const EdgeInsets.all(16.0),
             itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final data = docs[index].data();
               final name = data['name'] as String? ?? docs[index].id;
@@ -47,12 +80,10 @@ class CrewDirectoryScreen extends StatelessWidget {
                   leading: const Icon(Icons.groups),
                   title: Text(name),
                   subtitle: Text(
-                    memberCount == 1
-                        ? "1 member"
-                        : "$memberCount members",
+                    memberCount == 1 ? "1 member" : "$memberCount members",
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.pop(context, name),
+                  trailing: const Icon(Icons.lock_outline),
+                  onTap: () => _promptPassword(context, name),
                 ),
               );
             },

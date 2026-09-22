@@ -1,8 +1,14 @@
+import "dart:convert";
 import "package:cloud_firestore/cloud_firestore.dart";
+import "package:crypto/crypto.dart";
 import "package:firebase_auth/firebase_auth.dart";
 import "package:flutter/material.dart";
 import "package:flutter_animate/flutter_animate.dart";
 import "crew_directory_screen.dart";
+
+String hashPassword(String password) {
+  return sha256.convert(utf8.encode(password)).toString();
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,11 +19,13 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _crewController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _isJoining = false;
 
   @override
   void dispose() {
     _crewController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -29,9 +37,9 @@ class _HomeScreenState extends State<HomeScreen> {
         .replaceAll(RegExp(r'\s+'), '-');
   }
 
-  Future<void> _joinCrew(String rawName) async {
+  Future<void> _joinCrew(String rawName, String password) async {
     final name = rawName.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty || password.isEmpty) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -41,9 +49,11 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isJoining = true);
 
     final crewRef = FirebaseFirestore.instance.collection('crews').doc(slug);
+    final privateRef = crewRef.collection('private').doc('config');
     final memberRef = crewRef.collection('members').doc(user.uid);
     final userRef =
         FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final passwordHash = hashPassword(password);
 
     try {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -61,13 +71,18 @@ class _HomeScreenState extends State<HomeScreen> {
             'createdAt': now,
             'memberCount': 1,
           });
+          transaction.set(privateRef, {'passwordHash': passwordHash});
         } else {
           transaction.update(crewRef, {
             'memberCount': FieldValue.increment(1),
           });
         }
 
-        transaction.set(memberRef, {'email': user.email, 'joinedAt': now});
+        transaction.set(memberRef, {
+          'email': user.email,
+          'joinedAt': now,
+          'passwordHash': passwordHash,
+        });
 
         transaction.set(
           userRef,
@@ -85,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         final message = (e is StateError && e.message == 'already-in-crew')
             ? "You've already joined a crew."
-            : "Couldn't join crew, please try again.";
+            : "Couldn't join crew — check the name and password.";
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(message)));
       }
@@ -95,13 +110,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openDirectory() async {
-    final selectedName = await Navigator.push<String>(
+    final result = await Navigator.push<({String name, String password})>(
       context,
       MaterialPageRoute(builder: (_) => const CrewDirectoryScreen()),
     );
-    if (selectedName != null) {
-      _crewController.text = selectedName;
-      _joinCrew(selectedName);
+    if (result != null) {
+      _joinCrew(result.name, result.password);
     }
   }
 
@@ -172,9 +186,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       if (crewId == null) {
                         return _JoinCrewForm(
-                          controller: _crewController,
+                          nameController: _crewController,
+                          passwordController: _passwordController,
                           isJoining: _isJoining,
-                          onJoin: () => _joinCrew(_crewController.text),
+                          onJoin: () => _joinCrew(
+                              _crewController.text, _passwordController.text),
                           onBrowse: _openDirectory,
                         );
                       }
@@ -197,9 +213,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           if (!crewSnap.hasData || !crewSnap.data!.exists) {
                             return _JoinCrewForm(
-                              controller: _crewController,
+                              nameController: _crewController,
+                              passwordController: _passwordController,
                               isJoining: _isJoining,
-                              onJoin: () => _joinCrew(_crewController.text),
+                              onJoin: () => _joinCrew(_crewController.text,
+                                  _passwordController.text),
                               onBrowse: _openDirectory,
                             );
                           }
@@ -253,13 +271,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _JoinCrewForm extends StatelessWidget {
   const _JoinCrewForm({
-    required this.controller,
+    required this.nameController,
+    required this.passwordController,
     required this.isJoining,
     required this.onJoin,
     required this.onBrowse,
   });
 
-  final TextEditingController controller;
+  final TextEditingController nameController;
+  final TextEditingController passwordController;
   final bool isJoining;
   final VoidCallback onJoin;
   final VoidCallback onBrowse;
@@ -284,12 +304,21 @@ class _JoinCrewForm extends StatelessWidget {
           label: const Text("Browse existing crews"),
         ),
         const SizedBox(height: 16),
-        const Text("or"),
+        const Text("or create a new one"),
         const SizedBox(height: 16),
         TextField(
-          controller: controller,
+          controller: nameController,
           decoration: const InputDecoration(
-            labelText: "New crew name",
+            labelText: "Crew name",
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: passwordController,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: "Crew password",
             border: OutlineInputBorder(),
           ),
         ),

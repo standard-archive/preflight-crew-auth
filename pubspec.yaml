@@ -39,6 +39,7 @@ dependencies:
   google_fonts: ^8.2.1
   flutter_animate: ^4.5.2
   cloud_firestore: ^6.10.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
