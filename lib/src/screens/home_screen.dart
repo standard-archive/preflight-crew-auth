@@ -10,6 +10,11 @@ String hashPassword(String password) {
   return sha256.convert(utf8.encode(password)).toString();
 }
 
+String todayKey() {
+  final now = DateTime.now();
+  return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -110,12 +115,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openDirectory() async {
-    final result = await Navigator.push<({String name, String password})>(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const CrewDirectoryScreen()),
     );
     if (result != null) {
-      _joinCrew(result.name, result.password);
+      final record = result as ({String name, String password});
+      _joinCrew(record.name, record.password);
     }
   }
 
@@ -166,12 +172,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Divider(),
                 const SizedBox(height: 16),
                 if (user != null)
-                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  StreamBuilder(
                     stream: FirebaseFirestore.instance
                         .collection('users')
                         .doc(user.uid)
                         .snapshots(),
-                    builder: (context, userDocSnap) {
+                    builder: (context, AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> userDocSnap) {
                       if (userDocSnap.connectionState ==
                               ConnectionState.waiting &&
                           !userDocSnap.hasData) {
@@ -195,13 +201,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         );
                       }
 
-                      return StreamBuilder<
-                          DocumentSnapshot<Map<String, dynamic>>>(
+                      return StreamBuilder(
                         stream: FirebaseFirestore.instance
                             .collection('crews')
                             .doc(crewId)
                             .snapshots(),
-                        builder: (context, crewSnap) {
+                        builder: (context, AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> crewSnap) {
                           if (crewSnap.connectionState ==
                                   ConnectionState.waiting &&
                               !crewSnap.hasData) {
@@ -226,29 +231,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           final crewName =
                               crewData['name'] as String? ?? crewId;
 
-                          return StreamBuilder<
-                              QuerySnapshot<Map<String, dynamic>>>(
-                            stream: FirebaseFirestore.instance
-                                .collection('crews')
-                                .doc(crewId)
-                                .collection('members')
-                                .orderBy('joinedAt')
-                                .snapshots(),
-                            builder: (context, membersSnap) {
-                              final members = (membersSnap.data?.docs ?? [])
-                                  .map((d) => (
-                                        email: d.data()['email'] as String? ??
-                                            'Unknown',
-                                        joinedAt:
-                                            (d.data()['joinedAt']
-                                                    as Timestamp?)
-                                                ?.toDate(),
-                                      ))
-                                  .toList();
-
-                              return _CrewDetails(
-                                  crewName: crewName, members: members);
-                            },
+                          return _CrewDetails(
+                            crewId: crewId,
+                            crewName: crewName,
+                            currentUid: user.uid,
                           );
                         },
                       );
@@ -338,14 +324,80 @@ class _JoinCrewForm extends StatelessWidget {
   }
 }
 
-class _CrewDetails extends StatelessWidget {
-  const _CrewDetails({required this.crewName, required this.members});
+class _CrewDetails extends StatefulWidget {
+  const _CrewDetails({
+    required this.crewId,
+    required this.crewName,
+    required this.currentUid,
+  });
 
+  final String crewId;
   final String crewName;
-  final List<({String email, DateTime? joinedAt})> members;
+  final String currentUid;
+
+  @override
+  State<_CrewDetails> createState() => _CrewDetailsState();
+}
+
+class _CrewDetailsState extends State<_CrewDetails> {
+  final _taskController = TextEditingController();
+
+  @override
+  void dispose() {
+    _taskController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkIn() async {
+    await FirebaseFirestore.instance
+        .collection('crews')
+        .doc(widget.crewId)
+        .collection('members')
+        .doc(widget.currentUid)
+        .update({'lastCheckInDate': todayKey()});
+  }
+
+  Future<void> _addTask() async {
+    final text = _taskController.text.trim();
+    if (text.isEmpty) return;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('crews')
+        .doc(widget.crewId)
+        .collection('tasks')
+        .add({
+      'text': text,
+      'completed': false,
+      'createdBy': user.uid,
+      'createdByEmail': user.email,
+      'createdAt': FieldValue.serverTimestamp(),
+      'completedBy': null,
+      'completedAt': null,
+    });
+    _taskController.clear();
+  }
+
+  Future<void> _toggleTask(String taskId, bool currentlyCompleted) async {
+    final user = FirebaseAuth.instance.currentUser;
+    await FirebaseFirestore.instance
+        .collection('crews')
+        .doc(widget.crewId)
+        .collection('tasks')
+        .doc(taskId)
+        .update({
+      'completed': !currentlyCompleted,
+      'completedBy': !currentlyCompleted ? user?.email : null,
+      'completedAt':
+          !currentlyCompleted ? FieldValue.serverTimestamp() : null,
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final today = todayKey();
+
     return Column(
       children: [
         Icon(Icons.groups,
@@ -355,35 +407,144 @@ class _CrewDetails extends StatelessWidget {
             .scale(begin: const Offset(0.8, 0.8)),
         const SizedBox(height: 12),
         Text(
-          "You're in crew: $crewName",
+          "You're in crew: ${widget.crewName}",
           style: Theme.of(context).textTheme.titleMedium,
           textAlign: TextAlign.center,
         ).animate().fadeIn(duration: 600.ms).slideY(begin: -0.2),
         const SizedBox(height: 16),
+        StreamBuilder(
+          stream: FirebaseFirestore.instance
+              .collection('crews')
+              .doc(widget.crewId)
+              .collection('members')
+              .orderBy('joinedAt')
+              .snapshots(),
+          builder: (context, AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> membersSnap) {
+            final docs = membersSnap.data?.docs ?? [];
+            final selfDoc = docs.where((d) => d.id == widget.currentUid);
+            final selfCheckedIn = selfDoc.isNotEmpty &&
+                selfDoc.first.data()['lastCheckInDate'] == today;
+            final checkedInCount = docs
+                .where((d) => d.data()['lastCheckInDate'] == today)
+                .length;
+
+            return Column(
+              children: [
+                Text(
+                  "Members (${docs.length}) · $checkedInCount checked in today",
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 8),
+                ...docs.map((d) {
+                  final data = d.data();
+                  final email = data['email'] as String? ?? 'Unknown';
+                  final joinedAt =
+                      (data['joinedAt'] as Timestamp?)?.toDate();
+                  final checkedIn = data['lastCheckInDate'] == today;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          checkedIn
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
+                          size: 18,
+                          color: checkedIn ? Colors.greenAccent : Colors.grey,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            joinedAt != null
+                                ? "$email · joined ${joinedAt.day}/${joinedAt.month}/${joinedAt.year}"
+                                : email,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: selfCheckedIn ? null : _checkIn,
+                  icon: Icon(
+                      selfCheckedIn ? Icons.check : Icons.check_circle_outline),
+                  label: Text(
+                      selfCheckedIn ? "Checked in for today" : "Check in today"),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 32),
+        const Divider(),
+        const SizedBox(height: 16),
         Text(
-          "Members (${members.length})",
+          "Crew tasks",
           style: Theme.of(context).textTheme.labelLarge,
         ),
         const SizedBox(height: 8),
-        ...members.map(
-          (m) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.person, size: 18),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    m.joinedAt != null
-                        ? "${m.email} · joined ${m.joinedAt!.day}/${m.joinedAt!.month}/${m.joinedAt!.year}"
-                        : m.email,
-                    overflow: TextOverflow.ellipsis,
+        StreamBuilder(
+          stream: FirebaseFirestore.instance
+              .collection('crews')
+              .doc(widget.crewId)
+              .collection('tasks')
+              .orderBy('createdAt')
+              .snapshots(),
+          builder: (context, AsyncSnapshot<QuerySnapshot<Map<String, dynamic>>> tasksSnap) {
+            final docs = tasksSnap.data?.docs ?? [];
+            if (docs.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text("No tasks yet.",
+                    style: TextStyle(color: Colors.grey)),
+              );
+            }
+            return Column(
+              children: docs.map((d) {
+                final data = d.data();
+                final text = data['text'] as String? ?? '';
+                final completed = data['completed'] as bool? ?? false;
+                return CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: completed,
+                  onChanged: (_) => _toggleTask(d.id, completed),
+                  title: Text(
+                    text,
+                    style: completed
+                        ? const TextStyle(
+                            decoration: TextDecoration.lineThrough,
+                            color: Colors.grey)
+                        : null,
                   ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _taskController,
+                decoration: const InputDecoration(
+                  hintText: "Add a task...",
+                  border: OutlineInputBorder(),
+                  isDense: true,
                 ),
-              ],
+                onSubmitted: (_) => _addTask(),
+              ),
             ),
-          ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              onPressed: _addTask,
+              icon: const Icon(Icons.add),
+            ),
+          ],
         ),
       ],
     );
