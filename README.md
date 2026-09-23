@@ -39,7 +39,11 @@ Peer accountability only works if you trust who you're working with. PreFlight C
 
 ## Screenshots
 
-(screenshots go in the /screenshots folder - see below)
+![Login](screenshots/login.png)
+![Signup rejected](screenshots/signup-rejected.png)
+![Verify email](screenshots/verify-email.png)
+![Crew directory](screenshots/crew-directory.png)
+![Crew details](screenshots/crew-details.png)
 
 ## Wiki
 
